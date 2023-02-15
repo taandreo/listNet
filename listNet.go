@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
+	"golang.org/x/exp/slices"
 )
 
 var ctx context.Context
@@ -22,18 +23,30 @@ type Net struct {
 }
 
 var fileName string
+var ignoreSubsList string
+
+func ignoreSubs(subs []map[string]string, ignore string) []map[string]string {
+	var fList []map[string]string
+	ignoreList := strings.Split(ignore, ",")
+	for _, sub := range subs {
+		if !slices.Contains(ignoreList, sub["name"]) {
+			fList = append(fList, sub)
+		}
+	}
+	return fList
+}
 
 func main() {
 	flag.StringVar(&fileName, "fileName", "", "csv filename")
+	flag.StringVar(&ignoreSubsList, "excludeSubsList", "", "Subscription List name that will be excluded from the search")
 	flag.Parse()
-
 	if fileName == "" {
 		fmt.Fprintln(os.Stderr, "It's necessary to inform the filename with the option -fileName")
 		os.Exit(1)
 	}
 	ctx = context.Background()
 	cred, _ := azidentity.NewAzureCLICredential(nil)
-	subs := getSubsIds(cred)
+	subs := ignoreSubs(getSubsIds(cred), ignoreSubsList)
 	var allVnets []Net
 	for _, sub := range subs {
 		vnets := getNets(cred, sub)
@@ -73,7 +86,7 @@ func getNets(cred *azidentity.AzureCLICredential, sub map[string]string) []Net {
 		page, _ := pager.NextPage(ctx)
 		for _, network := range page.Value {
 			addr := strings.Join(ptrsToStrs(network.Properties.AddressSpace.AddressPrefixes), ", ")
-			netList = append(netList, Net{*network.Name, sub["name"], addr})
+			netList = append(netList, Net{sub["name"], *network.Name, addr})
 		}
 	}
 	return netList
